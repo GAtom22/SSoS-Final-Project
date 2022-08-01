@@ -9,9 +9,7 @@ pub enum AuctionError {
     #[msg("Seller didn't claim the highest bid yet")]
     UnclaimedPrize,
     #[msg("Seller already claimed the highest bid")]
-    AlreadyClaimedPrize,
-    #[msg("You won the bid, cannot get a refund!")]
-    WinnerCantRefund,   
+    AlreadyClaimedPrize, 
     #[msg("Insufficient funds on treasury!!!")]
     TreasuryInsufficientFunds,
 }
