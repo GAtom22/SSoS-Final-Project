@@ -10,6 +10,8 @@ declare_id!("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS");
 
 #[program]
 pub mod auction {
+    use anchor_lang::AccountsClose;
+
     use super::*;
     /// Creates and initialize a new state of our program
     pub fn initialize(
@@ -68,7 +70,7 @@ pub mod auction {
     pub fn end_auction(ctx: Context<EndAuction>) -> Result<()> {
         let state = &mut ctx.accounts.state;
         let clock = Clock::get()?;
-        
+
         require_keys_eq!(ctx.accounts.initializer.key(), state.seller_account);
 
         if clock.unix_timestamp < state.deadline {
@@ -108,20 +110,21 @@ pub mod auction {
             return err!(AuctionError::UnclaimedPrize);
         }
 
-        if state.highest_bidder_account == ctx.accounts.user.key() {
-            return err!(AuctionError::WinnerCantRefund);
+        // The highest bidder will get refunded only the rent payed for the user_bid PDA
+        if state.highest_bidder_account != ctx.accounts.user.key() {
+            let amount_to_refund = ctx.accounts.user_bid.amount;
+
+            // transfer amount from treasury account to initializer account
+            if amount_to_refund > 0 {
+                transfer_from_treasury(
+                    &ctx.accounts.treasury,
+                    &ctx.accounts.user.to_account_info(),
+                    amount_to_refund,
+                )?;
+            }
         }
 
-        let amount_to_refund = ctx.accounts.user_bid.amount;
-
-        // transfer amount from treasury account to initializer account
-        if amount_to_refund > 0 {
-            transfer_from_treasury(
-                &ctx.accounts.treasury,
-                &ctx.accounts.user.to_account_info(),
-                amount_to_refund,
-            )?;
-        }
+        ctx.accounts.user_bid.close(ctx.accounts.user.clone())?;
 
         Ok(())
     }
@@ -203,7 +206,7 @@ pub struct Refund<'info> {
     #[account(mut)]
     /// CHECK:
     pub user: AccountInfo<'info>,
-    #[account(seeds = [b"user-bid", user.key().as_ref(), state.key().as_ref()], bump)]
+    #[account(mut, seeds = [b"user-bid", user.key().as_ref(), state.key().as_ref()], bump)]
     pub user_bid: Account<'info, UserBid>,
     pub system_program: Program<'info, System>,
 }
@@ -239,9 +242,8 @@ fn transfer_from_treasury<'info>(
     destination_wallet: &AccountInfo,
     amount: u64,
 ) -> Result<()> {
-
     if **treasury.try_borrow_lamports()? < amount {
-        return err!(AuctionError::TreasuryInsufficientFunds)
+        return err!(AuctionError::TreasuryInsufficientFunds);
     }
 
     **treasury.try_borrow_mut_lamports()? -= amount;

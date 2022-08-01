@@ -10,31 +10,32 @@ describe("auction", () => {
   anchor.setProvider(provider);
 
   const program = anchor.workspace.Auction as Program<Auction>;
+  const initialFunds = 10000000000;
 
   let treasury: PublicKey = null;
   let state: PublicKey = null;
 
   // The Accounts to create.
-  // const state = anchor.web3.Keypair.generate();
   const initializer = anchor.web3.Keypair.generate();
   const thief = anchor.web3.Keypair.generate();
 
   const bidders = [
     { account: anchor.web3.Keypair.generate(), amount: 1.0 },
     { account: anchor.web3.Keypair.generate(), amount: 1.2 },
+    { account: anchor.web3.Keypair.generate(), amount: 1.3 },
   ];
 
   const failRefundCases = [
     { title: "Not bidder claims refund - should fail", account: thief, errorCode: "AccountNotInitialized" },
-    { title: "Winner claims refund - should fail", account: bidders[1].account, errorCode: "WinnerCantRefund" }
+    { title: "Loser claims refund for 2nd time - should fail", account: bidders[0].account, errorCode: "AccountNotInitialized" },
   ];
 
   before(async () => {
-    await fundAccount(provider, initializer.publicKey);
-    await fundAccount(provider, thief.publicKey);
+    await fundAccount(provider, initializer.publicKey, initialFunds);
+    await fundAccount(provider, thief.publicKey, initialFunds);
 
     for (let bidder of bidders) {
-      await fundAccount(provider, bidder.account.publicKey);
+      await fundAccount(provider, bidder.account.publicKey, initialFunds);
     }
 
     // Get the PDA that is assigned to treasury account.
@@ -221,7 +222,6 @@ describe("auction", () => {
   it("Loser claims refund", async () => {
     const loser = bidders[0];
     const treasuryBalance = await provider.connection.getBalance(treasury);
-    const loserBalance = await provider.connection.getBalance(loser.account.publicKey);
 
     const [userBidPda, _nonce] = await PublicKey.findProgramAddress(
       [Buffer.from("user-bid"), loser.account.publicKey.toBytes(), state.toBytes()],
@@ -243,7 +243,31 @@ describe("auction", () => {
     const updatedLoserBalance = await provider.connection.getBalance(loser.account.publicKey);
 
     expect(updatedTreasuryBalance).equal(treasuryBalance - loser.amount * 10 ** 9);
-    expect(updatedLoserBalance).equal(loserBalance + loser.amount * 10 ** 9);
+    expect(updatedLoserBalance).equal(initialFunds);
+  });
+
+
+  it("Winner claims refund | should only get the rent payed for user_bid PDA", async () => {
+    const winner = bidders[2];
+
+    const [userBidPda, _nonce] = await PublicKey.findProgramAddress(
+      [Buffer.from("user-bid"), winner.account.publicKey.toBytes(), state.toBytes()],
+      program.programId
+    );
+
+    await program.methods
+      .refund()
+      .accounts({
+        state: state,
+        treasury: treasury,
+        user: winner.account.publicKey,
+        userBid: userBidPda,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    const updatedWinnerBalance = await provider.connection.getBalance(winner.account.publicKey);
+    expect(updatedWinnerBalance).equal(initialFunds - winner.amount * 10 ** 9);
   });
 
 
