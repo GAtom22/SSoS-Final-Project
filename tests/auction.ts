@@ -135,6 +135,7 @@ describe("auction", () => {
           userBid: userBidPda,
           systemProgram: SystemProgram.programId,
         })
+        .signers([initializer])
         .rpc();
       throw new Error("Should have failed!");
     } catch (error) {
@@ -170,10 +171,11 @@ describe("auction", () => {
           userBid: userBidPda,
           systemProgram: SystemProgram.programId,
         })
+        .signers([thief])
         .rpc();
       throw new Error("Should have failed!");
     } catch (error) {
-      expect(error.error.errorCode.code).equal("RequireKeysEqViolated");
+      expect(error.error.errorCode.code).equal("ConstraintHasOne");
     }
 
     const updatedTreasuryBalance = await provider.connection.getBalance(treasury)
@@ -203,6 +205,7 @@ describe("auction", () => {
         userBid: userBidPda,
         systemProgram: SystemProgram.programId,
       })
+      .signers([initializer])
       .rpc();
 
     const auction = await program.account.state.fetch(state);
@@ -237,6 +240,7 @@ describe("auction", () => {
         userBid: userBidPda,
         systemProgram: SystemProgram.programId,
       })
+      .signers([loser.account])
       .rpc();
 
     const updatedTreasuryBalance = await provider.connection.getBalance(treasury);
@@ -264,6 +268,7 @@ describe("auction", () => {
         userBid: userBidPda,
         systemProgram: SystemProgram.programId,
       })
+      .signers([winner.account])
       .rpc();
 
     const updatedWinnerBalance = await provider.connection.getBalance(winner.account.publicKey);
@@ -290,6 +295,7 @@ describe("auction", () => {
             userBid: userBidPda,
             systemProgram: SystemProgram.programId,
           })
+          .signers([c.account])
           .rpc();
         throw new Error("Should have failed!");
       } catch (error) {

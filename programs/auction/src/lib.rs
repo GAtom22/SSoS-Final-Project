@@ -24,7 +24,7 @@ pub mod auction {
 
         state.bump = *ctx.bumps.get("state").unwrap();
         state.deadline = clock.unix_timestamp + auction_duration;
-        state.seller_account = ctx.accounts.initializer.key().clone();
+        state.initializer = ctx.accounts.initializer.key().clone();
 
         Ok(())
     }
@@ -70,8 +70,6 @@ pub mod auction {
     pub fn end_auction(ctx: Context<EndAuction>) -> Result<()> {
         let state = &mut ctx.accounts.state;
         let clock = Clock::get()?;
-
-        require_keys_eq!(ctx.accounts.initializer.key(), state.seller_account);
 
         if clock.unix_timestamp < state.deadline {
             return err!(AuctionError::StillActive);
@@ -124,7 +122,7 @@ pub mod auction {
             }
         }
 
-        ctx.accounts.user_bid.close(ctx.accounts.user.clone())?;
+        ctx.accounts.user_bid.close(ctx.accounts.user.to_account_info())?;
 
         Ok(())
     }
@@ -159,7 +157,7 @@ pub struct Initialize<'info> {
 #[account]
 pub struct State {
     deadline: i64,
-    seller_account: Pubkey,
+    initializer: Pubkey,
     seller_payed: bool,
     highest_bid_amount: u64,
     highest_bidder_account: Pubkey,
@@ -170,7 +168,7 @@ pub struct State {
 #[derive(Accounts)]
 pub struct PlaceBid<'info> {
     /// State of our auction program (up to you)
-    #[account(mut, seeds = [b"state", state.seller_account.as_ref()], bump = state.bump)]
+    #[account(mut, seeds = [b"state", state.initializer.as_ref()], bump = state.bump)]
     pub state: Account<'info, State>,
     /// Account which holds tokens bidded by biders
     /// Bidder
@@ -198,14 +196,14 @@ pub struct UserBid {
 // validation struct
 #[derive(Accounts)]
 pub struct Refund<'info> {
-    #[account(seeds = [b"state", state.seller_account.as_ref()], bump = state.bump)]
+    #[account(seeds = [b"state", state.initializer.as_ref()], bump = state.bump)]
     pub state: Account<'info, State>,
     #[account(mut, seeds = [b"treasury", state.key().as_ref()], bump)]
     /// CHECK:
     pub treasury: AccountInfo<'info>,
     #[account(mut)]
     /// CHECK:
-    pub user: AccountInfo<'info>,
+    pub user: Signer<'info>,
     #[account(mut, seeds = [b"user-bid", user.key().as_ref(), state.key().as_ref()], bump)]
     pub user_bid: Account<'info, UserBid>,
     pub system_program: Program<'info, System>,
@@ -213,12 +211,12 @@ pub struct Refund<'info> {
 
 #[derive(Accounts)]
 pub struct EndAuction<'info> {
-    #[account(mut, seeds = [b"state", state.seller_account.as_ref()], bump = state.bump)]
+    #[account(mut, has_one = initializer, seeds = [b"state", state.initializer.as_ref()], bump = state.bump)]
     pub state: Account<'info, State>,
     /// Seller
     #[account(mut)]
     /// CHECK:
-    pub initializer: AccountInfo<'info>,
+    pub initializer: Signer<'info>,
     /// Account which holds tokens bidded by biders
     #[account(mut, seeds = [b"treasury", state.key().as_ref()], bump)]
     /// CHECK:
