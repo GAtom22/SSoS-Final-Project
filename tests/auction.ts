@@ -109,12 +109,44 @@ describe("auction", () => {
       const updatedTreasuryBalance = await provider.connection.getBalance(treasury);
 
       // Highest bid number is in lamports
-      expect(highestBidNum).equal(bidder.amount * 10 ** 9);
+      expect(highestBidNum).equal(convertSolToLamports(bidder.amount));
       expect(auction.highestBidderAccount.toString()).equal(bidder.account.publicKey.toString());
       expect(auction.highestBidderAccount.toString()).equal(bidder.account.publicKey.toString());
-      expect(updatedTreasuryBalance).equal(treasuryBalance + bidder.amount * 10 ** 9);
+      expect(updatedTreasuryBalance).equal(treasuryBalance + convertSolToLamports(bidder.amount));
     });
   }
+
+  it("User wants to place a bid smaller than highest bid - should fail", async () => {
+    const treasuryBalance = await provider.connection.getBalance(treasury);
+    // Get the PDA that is assigned to user bid.
+    const [userBidPda, _nonce] = await PublicKey.findProgramAddress(
+      [Buffer.from("user-bid"), thief.publicKey.toBytes(), state.toBytes()],
+      program.programId
+    );
+
+    try {
+      await program.methods
+        .bid(1.0)
+        .accounts({
+          state: state,
+          user: thief.publicKey,
+          treasury: treasury,
+          userBid: userBidPda,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([thief])
+        .rpc();
+      throw new Error("Should have failed!");
+    } catch (error) {
+      expect(error.error.errorCode.code).equal("BidAmountTooSmall");
+    }
+
+    const updatedTreasuryBalance = await provider.connection.getBalance(treasury)
+    const thiefBalance = await provider.connection.getBalance(thief.publicKey);
+
+    expect(thiefBalance).equal(initialFunds);
+    expect(updatedTreasuryBalance).equal(treasuryBalance);
+  });
 
   it("End auction before deadline - should fail", async () => {
     const treasuryBalance = await provider.connection.getBalance(treasury);
@@ -246,7 +278,7 @@ describe("auction", () => {
     const updatedTreasuryBalance = await provider.connection.getBalance(treasury);
     const updatedLoserBalance = await provider.connection.getBalance(loser.account.publicKey);
 
-    expect(updatedTreasuryBalance).equal(treasuryBalance - loser.amount * 10 ** 9);
+    expect(updatedTreasuryBalance).equal(treasuryBalance - convertSolToLamports(loser.amount));
     expect(updatedLoserBalance).equal(initialFunds);
   });
 
@@ -272,7 +304,7 @@ describe("auction", () => {
       .rpc();
 
     const updatedWinnerBalance = await provider.connection.getBalance(winner.account.publicKey);
-    expect(updatedWinnerBalance).equal(initialFunds - winner.amount * 10 ** 9);
+    expect(updatedWinnerBalance).equal(initialFunds - convertSolToLamports(winner.amount));
   });
 
 
@@ -319,5 +351,7 @@ const fundAccount = async (provider: anchor.Provider, accountPubkey: anchor.web3
     signature: tx
   });
 }
+
+const convertSolToLamports = (solAmount: number): number => solAmount * 10 ** 9;
 
 const delay = ms => new Promise(res => setTimeout(res, ms));

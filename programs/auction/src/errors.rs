@@ -12,4 +12,6 @@ pub enum AuctionError {
     AlreadyClaimedPrize, 
     #[msg("Insufficient funds on treasury!!!")]
     TreasuryInsufficientFunds,
+    #[msg("Bid amount is smaller than highest bid")]
+    BidAmountTooSmall,
 }

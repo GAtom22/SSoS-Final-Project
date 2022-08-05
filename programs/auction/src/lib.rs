@@ -22,14 +22,13 @@ pub mod auction {
         let clock = Clock::get()?;
         let state = &mut ctx.accounts.state;
 
-        state.bump = *ctx.bumps.get("state").unwrap();
         state.deadline = clock.unix_timestamp + auction_duration;
         state.initializer = ctx.accounts.initializer.key().clone();
 
         Ok(())
     }
     /// Bid
-    pub fn bid(ctx: Context<PlaceBid>, amount: f64) -> Result<()> {
+    pub fn bid(ctx: Context<Bid>, amount: f64) -> Result<()> {
         let state = &mut ctx.accounts.state;
         let clock = Clock::get()?;
 
@@ -38,9 +37,14 @@ pub mod auction {
         }
 
         let amount_in_lamports = sol_to_lamports(amount);
-
-        // register user bid in PDA
         let user_bid = &mut ctx.accounts.user_bid;
+
+        if amount_in_lamports < state.highest_bid_amount {
+            user_bid.close(ctx.accounts.user.to_account_info())?;
+            return err!(AuctionError::BidAmountTooSmall);
+        }
+
+        // register user amunt bid in PDA
         user_bid.amount = amount_in_lamports;
 
         // send funds to treasury account
@@ -56,12 +60,10 @@ pub mod auction {
             ],
         )?;
 
-        // check if highest bid
-        if amount_in_lamports > state.highest_bid_amount {
-            state.highest_bid_amount = amount_in_lamports;
-            state.highest_bidder_account = ctx.accounts.user.key();
-            state.highest_bidder_bump = *ctx.bumps.get("user_bid").unwrap();
-        }
+        // register highest bid in state
+        state.highest_bid_amount = amount_in_lamports;
+        state.highest_bidder_account = ctx.accounts.user.key();
+        state.highest_bidder_bump = *ctx.bumps.get("user_bid").unwrap();
 
         Ok(())
     }
@@ -122,7 +124,9 @@ pub mod auction {
             }
         }
 
-        ctx.accounts.user_bid.close(ctx.accounts.user.to_account_info())?;
+        ctx.accounts
+            .user_bid
+            .close(ctx.accounts.user.to_account_info())?;
 
         Ok(())
     }
@@ -162,13 +166,12 @@ pub struct State {
     highest_bid_amount: u64,
     highest_bidder_account: Pubkey,
     highest_bidder_bump: u8,
-    bump: u8,
 }
 
 #[derive(Accounts)]
-pub struct PlaceBid<'info> {
+pub struct Bid<'info> {
     /// State of our auction program (up to you)
-    #[account(mut, seeds = [b"state", state.initializer.as_ref()], bump = state.bump)]
+    #[account(mut, seeds = [b"state", state.initializer.as_ref()], bump)]
     pub state: Account<'info, State>,
     /// Account which holds tokens bidded by biders
     /// Bidder
@@ -196,7 +199,7 @@ pub struct UserBid {
 // validation struct
 #[derive(Accounts)]
 pub struct Refund<'info> {
-    #[account(seeds = [b"state", state.initializer.as_ref()], bump = state.bump)]
+    #[account(seeds = [b"state", state.initializer.as_ref()], bump)]
     pub state: Account<'info, State>,
     #[account(mut, seeds = [b"treasury", state.key().as_ref()], bump)]
     /// CHECK:
@@ -211,7 +214,7 @@ pub struct Refund<'info> {
 
 #[derive(Accounts)]
 pub struct EndAuction<'info> {
-    #[account(mut, has_one = initializer, seeds = [b"state", state.initializer.as_ref()], bump = state.bump)]
+    #[account(mut, has_one = initializer, seeds = [b"state", state.initializer.as_ref()], bump)]
     pub state: Account<'info, State>,
     /// Seller
     #[account(mut)]
